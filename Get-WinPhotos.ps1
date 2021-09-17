@@ -1,61 +1,73 @@
 Param(
-	[Parameter(Position=0, Mandatory=$false)]
-	[Int32] $searchDaysAgo = 21,
-	[Parameter(Position=1, Mandatory=$false)]
-	[Int32] $MinKB = 100,
-	[Parameter(Position = 2, Mandatory = $false)]
-	[Alias("UniqueName", "NewName", "Name")]
-	[String] $OptionalPhotoName = "_SpotlightPicture_",
-    [Parameter(Position = 3, Mandatory = $false)]
-    [bool] $PrintSuccessful = $false
+	[Parameter(Position = 0)]
+	[ValidateNotNullOrEmpty()]
+	[Alias("UniqueFileName", "NewFileName", "FileName")]
+	[String] $RenameAs = "SpotlightPhoto",
+	[Parameter()]
+	[ValidateRange("Positive")]
+	[Int32] $SearchDaysAgo = 30,
+	[Parameter()]
+	[Int32] $MinSize = 100,
+	[Parameter()]
+	[switch] $OutputCopiedFiles
 )
 
 # Set up variables to use in script
-$photoPath = Resolve-Path -Path "$env:USERPROFILE\AppData\Local\Packages\Microsoft.Windows.ContentDelivery*\LocalState\Assets\"
-$dateCutOff = (Get-Date).Subtract($searchDaysAgo)
-$day = "{0:yyyyMMdd}" -f ([System.DateTime]::Now)
-$existingPhotoCount = 0
-$userPhotos = "$env:USERPROFILE\Pictures\Win10Photos"
+$spotlightPhotosPath = Resolve-Path -Path "$env:LOCALAPPDATA\Packages\Microsoft.Windows.ContentDelivery*\LocalState\Assets\"
+$userPhotoPath = "$env:USERPROFILE\Pictures\Win10Photos"
 
-if (-not (Test-Path $userPhotos)) {
-	New-Item -Path $userPhotos -ItemType Directory
-} else {
-    $existingPhotoCount = @(Get-ChildItem -Path "$userPhotos\*" -Name).Count
+$dateCreated = "{0:yyyyMMdd}" -f ([System.DateTime]::Now)
+$RenameAs.Trim("_")
+
+$dateCutOff = (Get-Date).AddDays(-$SearchDaysAgo)
+$MinKB = $MinSize * 1KB
+
+$destDirectory = if (-not (Test-Path $userPhotoPath))
+{
+	New-Item -Path $userPhotoPath -ItemType Directory
 }
+else
+{
+	Get-Item -Path $userPhotoPath
+}
+$existingPhotoCount = @(Get-ChildItem $destDirectory -Filter "*.jpg" -Name).Count
 
-$MinKB = $MinKB * 1KB
 # Load files into variable matching requirements
-$files = @(Get-ChildItem -Path $photoPath -Force | Where-Object {
-		($_.Length -ge $MinKB) -and ($_.CreationTime -ge $dateCutOff) })
+$files = @(Get-ChildItem -Path $spotlightPhotosPath -Force -File | 
+		Where-Object { ($_.Length -ge $MinKB) -and ($_.CreationTime -ge $dateCutOff) })
 
-# Copy the files and convert them to JPG
-$fileCount = $files.Count
-if ($fileCount -gt 0) {
-    # Get the padding for the number appended to the file name
-	$pad = [System.Math]::Floor([System.Math]::Log10($fileCount)) + 2
-	$OptionalPhotoName = if (-not $OptionalPhotoName.StartsWith("_")) {"_" + $OptionalPhotoName + "_"} else {$OptionalPhotoName}
-	$j = $existingPhotoCount + 1
-	$passedFiles = [System.Collections.ArrayList]::new($fileCount)
-	foreach ($file in $files) {
-        $destFileName = "{0}{1}{2}.jpg" -f $day, $OptionalPhotoName, "$j".PadLeft($pad, "0")
-		$destFile = Join-Path -Path $userPhotos -ChildPath $destFileName
-		try {
-			$passedFiles.Add((Copy-Item -Path $file.FullName -Destination $destFile))
-		}
-		catch [System.IO.IOException] {
-			Write-Output "Couldn't Copy File: $($file.FullName) To Destination: $($destFile)"
-			Write-Output $_.ErrorDetails.Message
-			$passedFiles.RemoveAt($passedFiles.Count - 1)
-		}
-		$j += 1
+# Get the number of 0's to pad the file name index.
+$pad = [System.Math]::Floor([System.Math]::Log10($existingPhotoCount + $files.Count)) + 2
+$index = $existingPhotoCount + 1
+$passedFiles = 0
+		
+foreach ($file in $files)
+{
+	$destFileName = "{0}_{1}_{2}.jpg" -f $dateCreated, $RenameAs, "$index".PadLeft($pad, "0")
+	$destFilePath = Join-Path $destDirectory.FullName $destFileName
+	try
+	{
+		$copiedFile = $file.CopyTo($destFilePath)
+		$passedFiles += 1
+		$index += 1
 	}
-	if ($passedFiles.Count -ge 1) {
-		Write-Output "$($passedFiles.Count)/$fileCount pictures copied successfully"
-        if ($PrintSuccessful) {
-            Write-Output $passedFiles
-        }
+	catch [System.IO.IOException]
+	{
+		Write-Warning $_.ErrorDetails.Message
+		continue
+	}
+
+	if ($OutputCopiedFiles)
+	{
+		$msg = "Copy Successful: {0}" -f $copiedFile.FullName
+		Write-Host $msg
 	}
 }
-else {
-	Write-Output "No files were found..."
+if ($files.Count -ge 1)
+{
+	Write-Host ("{0}/{1} pictures copied successfully." -f $passedFiles, $files.Count)
+}
+else
+{
+	Write-Host "No files were found with specified criteria."
 }
