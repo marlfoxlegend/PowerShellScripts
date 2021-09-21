@@ -1,73 +1,49 @@
-Param(
-	[Parameter(Position = 0)]
-	[ValidateNotNullOrEmpty()]
-	[Alias("UniqueFileName", "NewFileName", "FileName")]
-	[String] $RenameAs = "SpotlightPhoto",
-	[Parameter()]
-	[ValidateRange("Positive")]
-	[Int32] $SearchDaysAgo = 30,
-	[Parameter()]
-	[Int32] $MinSize = 100,
-	[Parameter()]
-	[switch] $OutputCopiedFiles
-)
+function Get-SpotlightPictures {
+    Param(
+        [Parameter(Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [Alias("NewName")]
+        [String] $RenameAs = "SpotlightPhoto",
+        [switch] $OutputCopiedFiles
+    )
 
-# Set up variables to use in script
-$spotlightPhotosPath = Resolve-Path -Path "$env:LOCALAPPDATA\Packages\Microsoft.Windows.ContentDelivery*\LocalState\Assets\"
-$userPhotoPath = "$env:USERPROFILE\Pictures\Win10Photos"
+    $SpotlightPhotosPath = Resolve-Path "$env:LOCALAPPDATA\Packages\Microsoft.Windows.ContentDelivery*\LocalState\Assets\"
+    if ($null -eq $SpotlightPhotosPath) {
+        Write-Error "Cannot resolve the Window's Spotlight directory path."
+        return
+    }
 
-$dateCreated = "{0:yyyyMMdd}" -f ([System.DateTime]::Now)
-$RenameAs.Trim("_")
+    $DestDirectory = New-Item "$env:USERPROFILE\Pictures\SpotlightPictures" -ItemType Directory -Force
+    $DateCreated = "{0:yyyyMMdd}" -f ([System.DateTime]::Now)
 
-$dateCutOff = (Get-Date).AddDays(-$SearchDaysAgo)
-$MinKB = $MinSize * 1KB
-
-$destDirectory = if (-not (Test-Path $userPhotoPath))
-{
-	New-Item -Path $userPhotoPath -ItemType Directory
-}
-else
-{
-	Get-Item -Path $userPhotoPath
-}
-$existingPhotoCount = @(Get-ChildItem $destDirectory -Filter "*.jpg" -Name).Count
-
-# Load files into variable matching requirements
-$files = @(Get-ChildItem -Path $spotlightPhotosPath -Force -File | 
-		Where-Object { ($_.Length -ge $MinKB) -and ($_.CreationTime -ge $dateCutOff) })
-
-# Get the number of 0's to pad the file name index.
-$pad = [System.Math]::Floor([System.Math]::Log10($existingPhotoCount + $files.Count)) + 2
-$index = $existingPhotoCount + 1
-$passedFiles = 0
-		
-foreach ($file in $files)
-{
-	$destFileName = "{0}_{1}_{2}.jpg" -f $dateCreated, $RenameAs, "$index".PadLeft($pad, "0")
-	$destFilePath = Join-Path $destDirectory.FullName $destFileName
-	try
-	{
-		$copiedFile = $file.CopyTo($destFilePath)
-		$passedFiles += 1
-		$index += 1
-	}
-	catch [System.IO.IOException]
-	{
-		Write-Warning $_.ErrorDetails.Message
-		continue
-	}
-
-	if ($OutputCopiedFiles)
-	{
-		$msg = "Copy Successful: {0}" -f $copiedFile.FullName
-		Write-Host $msg
-	}
-}
-if ($files.Count -ge 1)
-{
-	Write-Host ("{0}/{1} pictures copied successfully." -f $passedFiles, $files.Count)
-}
-else
-{
-	Write-Host "No files were found with specified criteria."
+    $ImageFiles = @(Get-ChildItem $SpotlightPhotosPath -File | 
+            ForEach-Object {
+                $Image = [System.Drawing.Image]::FromFile($_)
+                $IsJpg = $Image.RawFormat -eq [System.Drawing.Imaging.ImageFormat]::Jpeg
+                if ($IsJpg -and ($Image.Width -eq 1920)) {
+                    $_
+                }
+            })
+    $PassedFiles = 0
+    Push-Location $DestDirectory
+    for (($i = 0), ($j = 1); $i -lt $ImageFiles.Count; $i++) {
+        $destFileName = "{0}_{1}_{2}.jpg" -f $DateCreated, $RenameAs, $j
+        try {
+            $Jpg = Copy-Item $ImageFiles[$i] -Destination $destFileName -PassThru
+            $j++
+            $PassedFiles++
+            if ($OutputCopiedFiles) {
+                "Copy Successful: {0}" -f $Jpg | Write-Host
+            }
+        } catch {
+            Write-Warning $_.Exception.Message
+        }
+    }
+    Pop-Location
+    if ($ImageFiles.Count -ge 1) {
+        Write-Host ("{0}/{1} pictures copied successfully." -f $PassedFiles, $ImageFiles.Count)
+    }
+    else {
+        Write-Host "No files were found with specified criteria."
+    }
 }
