@@ -26,7 +26,7 @@ function Copy-SpotlightPictures {
         $IsJpg = $Image.RawFormat -eq [System.Drawing.Imaging.ImageFormat]::Jpeg
         if ($IsJpg -and ($Image.Width -eq 1920)) {
             $TotalJpegs++
-            $NewName = "{0}_{1}_{2}.jpg" -f $DateCreated, $Name, $FileIndex
+            $NewName = "{0}_{1}_{2}.jpg" -f $DateCreated, $Name, ("$FileIndex".PadLeft(2, '0'))
             try {
                 $Jpg = Copy-Item $_ $NewName -PassThru -ErrorAction Stop
                 $FileIndex++
