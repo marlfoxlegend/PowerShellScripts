@@ -2,19 +2,19 @@
     Param(
         [Parameter(Position = 0)]
         [ValidateNotNullOrEmpty()]
-        [String] $Name = "SpotlightPhoto"
+        [String] $Name = "SpotlightPictures"
     )
 
     try {
-        $SpotlightPhotosPath = "$env:LOCALAPPDATA\Packages\Microsoft.Windows.ContentDelivery*\LocalState\Assets\*"
-        $Spotlights = Get-ChildItem $SpotlightPhotosPath
+        $SpotlightDirectory = "$env:LOCALAPPDATA\Packages\Microsoft.Windows.ContentDelivery*\LocalState\Assets\*"
+        $Spotlights = Get-ChildItem -Path $SpotlightFiles
     }
     catch {
-        Write-Host "Cannot resolve the Window's Spotlight directory path."
+        Write-Error "Cannot resolve the Window's Spotlight directory path:`n`t$SpotlightDirectory"
         return
     }
 
-    $DestDirectory = New-Item "$env:USERPROFILE\Pictures\SpotlightPhotos" -ItemType Directory -Force
+    $DestDirectory = New-Item "$env:USERPROFILE\Pictures\SpotlightPictures" -ItemType Directory -Force
     $DateCreated = "{0:yyyyMMdd}" -f ([System.DateTime]::Today)
 
     $FileIndex = 1
@@ -32,19 +32,19 @@
                 $FileIndex++
             }
             catch {
-                Write-Error $_.Exception.Message
+                Write-Error -Exception $_.Exception
                 continue
             }
-            "Copy Successful: {0}" -f $Jpg | Write-Verbose
+            Write-Information "Copy Successful: $Jpg"
             $Jpg
         }
     }
     Pop-Location -StackName $StackName
     if ($TotalJpegs -ge 1) {
-        Write-Host ("{0}/{1} pictures copied successfully." -f $ImageFiles.Count, $TotalJpegs)
+        Write-Debug ("$($ImageFiles.Count)/$TotalJpegs pictures copied successfully.")
     }
     else {
-        Write-Host "No files were found with specified criteria."
+        Write-Debug "No files were found with specified criteria."
     }
 }
 
